@@ -45,25 +45,24 @@
     )
 )
 
-(define-private (update-resource-inventory (resource-identifier uint) (modification-amount uint) (inventory-operation (string-ascii 10)))
+(define-private (update-resource-inventory (resource-identifier uint) (modification-amount uint) (is-increment bool))
     (match (map-get? managed-resource-types { resource-identifier: resource-identifier })
         existing-resource (begin
-            (match inventory-operation
-                "increment" (map-set managed-resource-types
+            (if is-increment
+                (map-set managed-resource-types
                     { resource-identifier: resource-identifier }
                     {
                         resource-name: (get resource-name existing-resource),
                         resource-total-supply: (get resource-total-supply existing-resource),
                         resource-available-amount: (+ (get resource-available-amount existing-resource) modification-amount)
                     })
-                "decrement" (map-set managed-resource-types
+                (map-set managed-resource-types
                     { resource-identifier: resource-identifier }
                     {
                         resource-name: (get resource-name existing-resource),
                         resource-total-supply: (get resource-total-supply existing-resource),
                         resource-available-amount: (- (get resource-available-amount existing-resource) modification-amount)
                     })
-                false
             )
             (ok true))
         ERROR_RESOURCE_IDENTIFIER_NOT_FOUND
@@ -90,13 +89,13 @@
 (define-public (submit-resource-allocation-request (resource-identifier uint) (requested-amount uint))
     (let (
         (resource-data (unwrap! (map-get? managed-resource-types { resource-identifier: resource-identifier }) ERROR_RESOURCE_IDENTIFIER_NOT_FOUND))
-        (current-block-height (unwrap! block-height u0))
+        (current-block-height block-height)
     )
         (asserts! (>= (get resource-available-amount resource-data) requested-amount) ERROR_INSUFFICIENT_RESOURCE_BALANCE)
         (asserts! (> requested-amount u0) ERROR_INVALID_RESOURCE_AMOUNT)
         
         ;; Update resource availability
-        (unwrap! (update-resource-inventory resource-identifier requested-amount "decrement") ERROR_RESOURCE_IDENTIFIER_NOT_FOUND)
+        (unwrap! (update-resource-inventory resource-identifier requested-amount false) ERROR_RESOURCE_IDENTIFIER_NOT_FOUND)
         
         ;; Create allocation record
         (map-set resource-allocation-records
@@ -132,7 +131,7 @@
         (asserts! (is-eq (get allocation-status allocation-record) "active") ERROR_INVALID_RESOURCE_AMOUNT)
         
         ;; Return resource to available pool
-        (unwrap! (update-resource-inventory resource-identifier (get allocated-amount allocation-record) "increment") 
+        (unwrap! (update-resource-inventory resource-identifier (get allocated-amount allocation-record) true) 
             ERROR_RESOURCE_IDENTIFIER_NOT_FOUND)
         
         ;; Update allocation record
